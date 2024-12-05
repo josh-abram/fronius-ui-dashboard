@@ -2,6 +2,8 @@
 
 A web-based monitoring application for Fronius solar inverters that provides real-time and historical power generation/consumption data visualization.
 
+![Screenshot of Fronius Solar Power Monitor](assets/screenshot.png)
+
 ## Features
 
 - Real-time power monitoring
