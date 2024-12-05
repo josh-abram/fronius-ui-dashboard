@@ -1,0 +1,876 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fronius Power Monitoring</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #3b82f6;
+            --primary-light: #60a5fa;
+            --success: #22c55e;
+            --danger: #ef4444;
+            --bg-dark: #111827;
+            --bg-card: #1f2937;
+            --text-primary: #f3f4f6;
+            --text-secondary: #9ca3af;
+            --border-color: #374151;
+            --hover-bg: #2d3748;
+            --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.2), 0 2px 4px -2px rgb(0 0 0 / 0.2);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', system-ui, sans-serif;
+            color: var(--text-primary);
+            background-color: var(--bg-dark);
+            line-height: 1.5;
+            min-height: 100vh;
+        }
+
+        header, main, footer {
+            max-width: 1200px;
+            margin: auto;
+            padding: 1.5rem;
+            text-align: center;
+        }
+
+        header {
+            background: var(--bg-card);
+            border-bottom: 1px solid var(--border-color);
+            box-shadow: var(--shadow);
+        }
+
+        h1 {
+            font-size: 1.875rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 1.5rem;
+        }
+
+        h2 {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin: 2rem 0 1rem;
+        }
+
+        .card {
+            background: var(--bg-card);
+            border-radius: 0.5rem;
+            box-shadow: var(--shadow);
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            border: 1px solid var(--border-color);
+        }
+
+        .status {
+            display: inline-flex;
+            align-items: center;
+            padding: 0.5rem 1rem;
+            border-radius: 9999px;
+            font-weight: 500;
+            margin-bottom: 1rem;
+            transition: background-color 0.2s;
+        }
+
+        .status.pulling {
+            background-color: var(--danger);
+            color: white;
+        }
+
+        .status.generating {
+            background-color: var(--success);
+            color: white;
+        }
+
+        .consumption {
+            font-size: 1.25rem;
+            color: var(--text-secondary);
+        }
+
+        .data-mode {
+            display: flex;
+            justify-content: center;
+            gap: 0.5rem;
+            margin: 1rem 0;
+        }
+
+        button {
+            background-color: var(--bg-card);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            padding: 0.5rem 1rem;
+            border-radius: 0.375rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        button:hover {
+            background-color: var(--hover-bg);
+            border-color: var(--primary);
+        }
+
+        button.primary {
+            background-color: var(--primary);
+            border-color: var(--primary);
+            color: white;
+        }
+
+        button.primary:hover {
+            background-color: var(--primary-light);
+        }
+
+        .quick-select {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 0.5rem;
+            margin: 1rem 0;
+        }
+
+        .filters {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin: 1rem 0;
+            justify-items: center;
+        }
+
+        .filters > div {
+            width: 100%;
+            max-width: 300px;
+        }
+
+        .filters label {
+            display: block;
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: var(--text-secondary);
+            margin-bottom: 0.25rem;
+            text-align: left;
+        }
+
+        input[type="datetime-local"] {
+            width: 100%;
+            padding: 0.5rem;
+            border: 1px solid var(--border-color);
+            border-radius: 0.375rem;
+            font-size: 0.875rem;
+            background-color: var(--bg-dark);
+            color: var(--text-primary);
+        }
+
+        input[type="datetime-local"]:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1rem;
+            margin: 1.5rem 0;
+            justify-items: center;
+        }
+
+        .summary-item {
+            background: var(--bg-dark);
+            padding: 1rem;
+            border-radius: 0.375rem;
+            border: 1px solid var(--border-color);
+            width: 100%;
+            max-width: 300px;
+            text-align: center;
+        }
+
+        .summary-item-label {
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+            margin-bottom: 0.25rem;
+        }
+
+        .summary-item-value {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1rem auto;
+            background: var(--bg-card);
+            border-radius: 0.5rem;
+            overflow: hidden;
+            max-width: 900px;
+        }
+
+        th, td {
+            padding: 0.75rem 1rem;
+            text-align: center;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        th {
+            background-color: var(--bg-dark);
+            font-weight: 500;
+            color: var(--text-secondary);
+        }
+
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        tr:hover {
+            background-color: var(--hover-bg);
+        }
+
+        .loading {
+            opacity: 0.5;
+            pointer-events: none;
+        }
+
+        footer {
+            text-align: center;
+            padding: 2rem;
+            color: var(--text-secondary);
+            font-size: 0.875rem;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 400px;
+            width: 100%;
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        #powerChart {
+            position: absolute;
+            left: 0;
+            top: 0;
+            right: 0;
+            bottom: 0;
+        }
+
+        .tooltip {
+            position: relative;
+            display: inline-block;
+        }
+
+        .tooltip:hover::after {
+            content: attr(data-tooltip);
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 0.5rem;
+            background: var(--bg-dark);
+            color: var(--text-primary);
+            border-radius: 0.25rem;
+            font-size: 0.75rem;
+            white-space: nowrap;
+            z-index: 10;
+            border: 1px solid var(--border-color);
+        }
+
+        @media (max-width: 768px) {
+            .filters {
+                grid-template-columns: 1fr;
+            }
+
+            .summary-grid {
+                grid-template-columns: 1fr;
+            }
+
+            th, td {
+                padding: 0.5rem;
+                font-size: 0.875rem;
+            }
+
+            .chart-container {
+                height: 300px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Fronius Power Monitoring</h1>
+        <div id="status" class="status">Loading...</div>
+        <div id="consumption" class="consumption">Current Consumption: Loading...</div>
+    </header>
+    <main>
+        <div class="card">
+            <div class="data-mode">
+                <button id="live-data-button" class="primary" style="display: none;">Return to Live Data</button>
+            </div>
+            <div class="chart-container">
+                <canvas id="powerChart"></canvas>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Power Summary</h2>
+            <div class="summary-grid">
+                <div class="summary-item tooltip" data-tooltip="Total energy drawn from the grid">
+                    <div class="summary-item-label">Total Energy Drawn</div>
+                    <div class="summary-item-value" id="total-energy-drawn">0.00 kWh</div>
+                </div>
+                <div class="summary-item tooltip" data-tooltip="Total energy generated by your system">
+                    <div class="summary-item-label">Total Energy Generated</div>
+                    <div class="summary-item-value" id="total-energy-generated">0.00 kWh</div>
+                </div>
+                <div class="summary-item tooltip" data-tooltip="Estimated cost based on current rates">
+                    <div class="summary-item-label">Total Cost</div>
+                    <div class="summary-item-value" id="total-cost">$0.00</div>
+                </div>
+            </div>
+
+            <h2>Quick Select</h2>
+            <div class="quick-select" id="quick-select">
+                <button data-period="today">Today</button>
+                <button data-period="24h">Last 24h</button>
+                <button data-period="1m">Last 1 month</button>
+                <button data-period="3m">Last 3 months</button>
+                <button data-period="6m">Last 6 months</button>
+                <button data-period="1y">Last 1 year</button>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Filter Historical Data</h2>
+            <div class="filters">
+                <div>
+                    <label for="start-date">Start Date</label>
+                    <input type="datetime-local" id="start-date">
+                </div>
+                <div>
+                    <label for="end-date">End Date</label>
+                    <input type="datetime-local" id="end-date">
+                </div>
+            </div>
+            <div style="margin-top: 1rem; text-align: center;">
+                <button id="filter-button" class="primary">Filter Data</button>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Historical Power Data</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Timestamp</th>
+                        <th>Grid Energy (kWh)</th>
+                        <th>Consumption (kWh)</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody id="data-body">
+                    <!-- Data will be populated here -->
+                </tbody>
+            </table>
+        </div>
+    </main>
+    <footer>
+        <p>
+            <a href="https://github.com/josh-abram/fronius-solar-monitor" 
+               target="_blank" 
+               rel="noopener noreferrer" 
+               style="color: var(--primary); text-decoration: none; transition: color 0.2s;">
+                View on GitHub
+            </a>
+        </p>
+    </footer>
+
+    <script>
+        // Update chart configuration for dark mode
+        const realTimeChartCtx = document.getElementById('powerChart').getContext('2d');
+        const realTimeChart = new Chart(realTimeChartCtx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Grid Power',
+                    data: [],
+                    borderColor: '#3b82f6',
+                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                    borderWidth: 2,
+                    fill: true,
+                    tension: 0.4,
+                    pointRadius: 3,
+                    pointHoverRadius: 5
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: {
+                    intersect: false,
+                    mode: 'index'
+                },
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'top',
+                        labels: {
+                            color: '#f3f4f6'
+                        }
+                    },
+                    tooltip: {
+                        enabled: true,
+                        backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                        titleColor: '#f3f4f6',
+                        bodyColor: '#f3f4f6',
+                        borderColor: '#374151',
+                        borderWidth: 1,
+                        padding: 10,
+                        displayColors: false
+                    }
+                },
+                scales: {
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'Time',
+                            color: '#9ca3af'
+                        },
+                        grid: {
+                            display: false
+                        },
+                        ticks: {
+                            color: '#9ca3af'
+                        }
+                    },
+                    y: {
+                        title: {
+                            display: true,
+                            text: 'Power (W)',
+                            color: '#9ca3af'
+                        },
+                        grid: {
+                            color: '#374151'
+                        },
+                        ticks: {
+                            color: '#9ca3af'
+                        }
+                    }
+                }
+            }
+        });
+
+        // Track data mode and updates
+        let isLiveData = true;
+        let liveDataInterval;
+        let lastUpdateTimestamp = null;
+
+        async function updateRealTimeData() {
+            try {
+                const response = await fetch('/net_power');
+                const data = await response.json();
+                
+                if (data.timestamp === lastUpdateTimestamp) {
+                    return;
+                }
+                
+                lastUpdateTimestamp = data.timestamp;
+                const statusEl = document.getElementById('status');
+                const consumptionEl = document.getElementById('consumption');
+
+                if (data.error) {
+                    statusEl.textContent = `Error: ${data.error}`;
+                    statusEl.className = 'status';
+                    consumptionEl.textContent = `Current Consumption: N/A`;
+                    return;
+                }
+
+                const pGrid = data.p_grid;
+                const pLoad = data.p_load;
+
+                // Update status with appropriate styling
+                if (pGrid > 0) {
+                    statusEl.textContent = `Pulling ${pGrid.toFixed(2)} W from the grid`;
+                    statusEl.className = 'status pulling';
+                } else {
+                    statusEl.textContent = `Generating surplus of ${Math.abs(pGrid.toFixed(2))} W`;
+                    statusEl.className = 'status generating';
+                }
+
+                consumptionEl.textContent = `Current Consumption: ${pLoad !== null ? pLoad.toFixed(2) : 'N/A'} W`;
+
+                if (isLiveData) {
+                    // Initialize chart data arrays if they're empty
+                    if (realTimeChart.data.labels.length === 0) {
+                        realTimeChart.options.scales.y.title.text = 'Power (W)';
+                    }
+                    
+                    realTimeChart.data.labels.push(new Date().toLocaleTimeString());
+                    realTimeChart.data.datasets[0].data.push(pGrid);
+
+                    // Keep last 100 data points
+                    if (realTimeChart.data.labels.length > 100) {
+                        realTimeChart.data.labels.shift();
+                        realTimeChart.data.datasets[0].data.shift();
+                    }
+
+                    realTimeChart.update('none'); // Use 'none' for smoother updates
+                }
+            } catch (error) {
+                console.error('Error updating real-time data:', error);
+            }
+        }
+
+        async function loadHistoricalData(start = '', end = '') {
+            /**
+             * Loads historical power data for specified time range.
+             * Aggregates data by hour/day/week based on range length.
+             * Updates chart, table, and summary statistics.
+             * 
+             * @param {string} start - ISO timestamp for range start
+             * @param {string} end - ISO timestamp for range end
+             */
+            const response = await fetch(`/historical_data?start=${start}&end=${end}`);
+            const result = await response.json();
+            const dataBody = document.getElementById('data-body');
+            const totalCostEl = document.getElementById('total-cost');
+            const totalEnergyDrawnEl = document.getElementById('total-energy-drawn');
+            const totalEnergyGeneratedEl = document.getElementById('total-energy-generated');
+
+            if (result.error) {
+                dataBody.innerHTML = `<tr><td colspan="4">Error: ${result.error}</td></tr>`;
+                totalCostEl.textContent = "Total Cost: $0.00";
+                totalEnergyDrawnEl.textContent = "Total kWh Drawn: 0.00 kWh";
+                totalEnergyGeneratedEl.textContent = "Total kWh Generated: 0.00 kWh";
+                return;
+            }
+
+            // Calculate time difference in hours
+            const startTime = new Date(result.start_time);
+            const endTime = new Date(result.end_time);
+            const hoursDiff = (endTime - startTime) / (1000 * 60 * 60);
+
+            // Determine aggregation level based on time range
+            let aggregatedData;
+            if (hoursDiff <= 24) {
+                // Hourly totals (kWh)
+                aggregatedData = aggregateByHour(result.data);
+                realTimeChart.options.scales.x.title.text = 'Hour';
+            } else if (hoursDiff <= 24 * 30) {
+                // Daily totals (kWh)
+                aggregatedData = aggregateByDay(result.data);
+                realTimeChart.options.scales.x.title.text = 'Day';
+            } else {
+                // Weekly totals (kWh)
+                aggregatedData = aggregateByWeek(result.data);
+                realTimeChart.options.scales.x.title.text = 'Week';
+            }
+
+            // Historical mode: show energy (kWh)
+            realTimeChart.options.scales.y.title.text = 'Energy (kWh)';
+
+            // Update chart and table with aggregated data
+            dataBody.innerHTML = '';
+            realTimeChart.data.labels = [];
+            realTimeChart.data.datasets[0].data = [];
+
+            aggregatedData.forEach(entry => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${entry.label}</td>
+                    <td>${entry.p_grid.toFixed(2)}</td>
+                    <td>${entry.p_load !== null ? entry.p_load.toFixed(2) : 'N/A'}</td>
+                    <td>${entry.status}</td>
+                `;
+                dataBody.appendChild(row);
+
+                realTimeChart.data.labels.push(entry.label);
+                realTimeChart.data.datasets[0].data.push(entry.p_grid);
+            });
+
+            totalCostEl.textContent = `Total Cost: $${result.total_cost.toFixed(2)}`;
+            totalEnergyDrawnEl.textContent = `Total kWh Drawn: ${result.total_kWh_drawn.toFixed(2)} kWh`;
+            totalEnergyGeneratedEl.textContent = `Total kWh Generated: ${result.total_kWh_generated.toFixed(2)} kWh`;
+
+            realTimeChart.update();
+        }
+
+        function aggregateByHour(data) {
+            /**
+             * Aggregates power readings into hourly energy totals.
+             * Calculates kWh by integrating power readings over time.
+             * 
+             * @param {Array} data - Raw power readings
+             * @returns {Array} Hourly energy totals with labels
+             */
+            const hourlyData = {};
+
+            data.forEach(entry => {
+                const date = new Date(entry.timestamp);
+                const hourKey = `${date.getFullYear()}-${date.getMonth()+1}-${date.getDate()} ${date.getHours()}:00`;
+                if (!hourlyData[hourKey]) {
+                    hourlyData[hourKey] = [];
+                }
+                hourlyData[hourKey].push(entry);
+            });
+
+            const results = [];
+            for (const hourKey in hourlyData) {
+                const entries = hourlyData[hourKey];
+                entries.sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+                let total_grid_kWh = 0;
+                let total_load_kWh = 0;
+
+                for (let i = 0; i < entries.length - 1; i++) {
+                    const current = entries[i];
+                    const next = entries[i+1];
+                    const p_grid = current.p_grid;
+                    const p_load = current.p_load;
+                    const t_current = new Date(current.timestamp);
+                    const t_next = new Date(next.timestamp);
+                    const delta_h = (t_next - t_current) / 3600000;
+
+                    if (delta_h > 0) {
+                        total_grid_kWh += (p_grid * delta_h) / 1000;
+                        if (p_load !== null && p_load !== undefined) {
+                            total_load_kWh += (p_load * delta_h) / 1000;
+                        }
+                    }
+                }
+
+                const status = total_grid_kWh > 0 ? 'pulling' : 'generating';
+                const dateObj = new Date(hourKey);
+                const label = dateObj.toLocaleString('en-US', { hour: 'numeric', hour12: true }) + ' ' + dateObj.toLocaleDateString('en-US');
+
+                results.push({
+                    label: label,
+                    p_grid: total_grid_kWh,
+                    p_load: total_load_kWh,
+                    status: status
+                });
+            }
+
+            // Sort by time
+            results.sort((a,b) => new Date(a.label) - new Date(b.label));
+            return results;
+        }
+
+        function aggregateByDay(data) {
+            /**
+             * Aggregates power readings into daily energy totals.
+             * Calculates kWh by integrating power readings over time.
+             * 
+             * @param {Array} data - Raw power readings
+             * @returns {Array} Daily energy totals with labels
+             */
+            const dailyData = {};
+
+            data.forEach(entry => {
+                const date = new Date(entry.timestamp);
+                const dayKey = `${date.getFullYear()}-${date.getMonth()+1}-${date.getDate()}`;
+                if (!dailyData[dayKey]) {
+                    dailyData[dayKey] = [];
+                }
+                dailyData[dayKey].push(entry);
+            });
+
+            const results = [];
+            for (const dayKey in dailyData) {
+                const entries = dailyData[dayKey];
+                entries.sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+                let total_grid_kWh = 0;
+                let total_load_kWh = 0;
+
+                for (let i = 0; i < entries.length - 1; i++) {
+                    const current = entries[i];
+                    const next = entries[i+1];
+                    const p_grid = current.p_grid;
+                    const p_load = current.p_load;
+                    const t_current = new Date(current.timestamp);
+                    const t_next = new Date(next.timestamp);
+                    const delta_h = (t_next - t_current) / 3600000;
+
+                    if (delta_h > 0) {
+                        total_grid_kWh += (p_grid * delta_h) / 1000;
+                        if (p_load !== null && p_load !== undefined) {
+                            total_load_kWh += (p_load * delta_h) / 1000;
+                        }
+                    }
+                }
+
+                const status = total_grid_kWh > 0 ? 'pulling' : 'generating';
+                const dateObj = new Date(dayKey);
+                const label = dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+                results.push({
+                    label: label,
+                    p_grid: total_grid_kWh,
+                    p_load: total_load_kWh,
+                    status: status
+                });
+            }
+
+            // Sort by date
+            results.sort((a,b) => new Date(a.label) - new Date(b.label));
+            return results;
+        }
+
+        function aggregateByWeek(data) {
+            /**
+             * Aggregates power readings into weekly energy totals.
+             * Calculates kWh by integrating power readings over time.
+             * 
+             * @param {Array} data - Raw power readings
+             * @returns {Array} Weekly energy totals with labels
+             */
+            const weeklyData = {};
+
+            data.forEach(entry => {
+                const date = new Date(entry.timestamp);
+                const weekStart = new Date(date);
+                weekStart.setHours(0,0,0,0);
+                weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+
+                const weekKey = weekStart.toISOString().split('T')[0];
+                if (!weeklyData[weekKey]) {
+                    weeklyData[weekKey] = [];
+                }
+                weeklyData[weekKey].push(entry);
+            });
+
+            const results = [];
+            for (const weekKey in weeklyData) {
+                const entries = weeklyData[weekKey];
+                entries.sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+                let total_grid_kWh = 0;
+                let total_load_kWh = 0;
+
+                for (let i = 0; i < entries.length - 1; i++) {
+                    const current = entries[i];
+                    const next = entries[i+1];
+                    const p_grid = current.p_grid;
+                    const p_load = current.p_load;
+                    const t_current = new Date(current.timestamp);
+                    const t_next = new Date(next.timestamp);
+                    const delta_h = (t_next - t_current) / 3600000;
+
+                    if (delta_h > 0) {
+                        total_grid_kWh += (p_grid * delta_h) / 1000;
+                        if (p_load !== null && p_load !== undefined) {
+                            total_load_kWh += (p_load * delta_h) / 1000;
+                        }
+                    }
+                }
+
+                const status = total_grid_kWh > 0 ? 'pulling' : 'generating';
+
+                const weekStartDate = new Date(weekKey);
+                const weekEndDate = new Date(weekStartDate);
+                weekEndDate.setDate(weekEndDate.getDate() + 6);
+
+                const label = weekStartDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) 
+                    + ' - ' + weekEndDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+                results.push({
+                    label: label,
+                    p_grid: total_grid_kWh,
+                    p_load: total_load_kWh,
+                    status: status
+                });
+            }
+
+            results.sort((a,b) => {
+                const aDate = new Date(a.label.split(' - ')[0] + ' 00:00:00');
+                const bDate = new Date(b.label.split(' - ')[0] + ' 00:00:00');
+                return aDate - bDate;
+            });
+            return results;
+        }
+
+        document.getElementById('filter-button').addEventListener('click', () => {
+            const startDate = document.getElementById('start-date').value;
+            const endDate = document.getElementById('end-date').value;
+            switchToHistoricalMode();
+            loadHistoricalData(startDate, endDate);
+        });
+
+        document.getElementById('live-data-button').addEventListener('click', () => {
+            isLiveData = true;
+            document.getElementById('live-data-button').style.display = 'none';
+            
+            // Clear existing chart data
+            realTimeChart.data.labels = [];
+            realTimeChart.data.datasets[0].data = [];
+            realTimeChart.update();
+            
+            // Start live updates
+            liveDataInterval = setInterval(updateRealTimeData, 1000);
+        });
+
+        document.getElementById('quick-select').addEventListener('click', (event) => {
+            const button = event.target;
+            if (button.tagName === 'BUTTON') {
+                const period = button.getAttribute('data-period');
+                const end = new Date();
+                let start;
+
+                switch (period) {
+                    case 'today':
+                        start = new Date(end);
+                        start.setHours(0, 0, 0, 0);
+                        break;
+                    case '24h':
+                        start = new Date(end.getTime() - 24 * 60 * 60 * 1000);
+                        break;
+                    case '1m':
+                        start = new Date(end);
+                        start.setMonth(end.getMonth() - 1);
+                        break;
+                    case '3m':
+                        start = new Date(end);
+                        start.setMonth(end.getMonth() - 3);
+                        break;
+                    case '6m':
+                        start = new Date(end);
+                        start.setMonth(end.getMonth() - 6);
+                        break;
+                    case '1y':
+                        start = new Date(end);
+                        start.setFullYear(end.getFullYear() - 1);
+                        break;
+                }
+
+                if (start) {
+                    switchToHistoricalMode();
+                    loadHistoricalData(start.toISOString(), new Date().toISOString());
+                }
+            }
+        });
+
+        function switchToHistoricalMode() {
+            if (isLiveData) {
+                isLiveData = false;
+                clearInterval(liveDataInterval);
+                document.getElementById('live-data-button').style.display = 'block';
+            }
+        }
+
+        // On load, show today's data in live mode
+        window.addEventListener('load', () => {
+            isLiveData = true;
+            liveDataInterval = setInterval(updateRealTimeData, 1000);
+        });
+    </script>
+</body>
+</html>
