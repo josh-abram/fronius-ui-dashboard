@@ -530,272 +530,78 @@
         }
 
         async function loadHistoricalData(start = '', end = '') {
-            /**
-             * Loads historical power data for specified time range.
-             * Aggregates data by hour/day/week based on range length.
-             * Updates chart, table, and summary statistics.
-             * 
-             * @param {string} start - ISO timestamp for range start
-             * @param {string} end - ISO timestamp for range end
-             */
-            const response = await fetch(`/historical_data?start=${start}&end=${end}`);
-            const result = await response.json();
-            const dataBody = document.getElementById('data-body');
-            const totalCostEl = document.getElementById('total-cost');
-            const totalEnergyDrawnEl = document.getElementById('total-energy-drawn');
-            const totalEnergyGeneratedEl = document.getElementById('total-energy-generated');
+            try {
+                const response = await fetch(`/historical_data?start=${start}&end=${end}`);
+                const result = await response.json();
+                
+                const dataBody = document.getElementById('data-body');
+                const totalCostEl = document.getElementById('total-cost');
+                const totalEnergyDrawnEl = document.getElementById('total-energy-drawn');
+                const totalEnergyGeneratedEl = document.getElementById('total-energy-generated');
 
-            if (result.error) {
-                dataBody.innerHTML = `<tr><td colspan="4">Error: ${result.error}</td></tr>`;
-                totalCostEl.textContent = "Total Cost: $0.00";
-                totalEnergyDrawnEl.textContent = "Total kWh Drawn: 0.00 kWh";
-                totalEnergyGeneratedEl.textContent = "Total kWh Generated: 0.00 kWh";
-                return;
-            }
-
-            // Calculate time difference in hours
-            const startTime = new Date(result.start_time);
-            const endTime = new Date(result.end_time);
-            const hoursDiff = (endTime - startTime) / (1000 * 60 * 60);
-
-            // Determine aggregation level based on time range
-            let aggregatedData;
-            if (hoursDiff <= 24) {
-                // Hourly totals (kWh)
-                aggregatedData = aggregateByHour(result.data);
-                realTimeChart.options.scales.x.title.text = 'Hour';
-            } else if (hoursDiff <= 24 * 30) {
-                // Daily totals (kWh)
-                aggregatedData = aggregateByDay(result.data);
-                realTimeChart.options.scales.x.title.text = 'Day';
-            } else {
-                // Weekly totals (kWh)
-                aggregatedData = aggregateByWeek(result.data);
-                realTimeChart.options.scales.x.title.text = 'Week';
-            }
-
-            // Historical mode: show energy (kWh)
-            realTimeChart.options.scales.y.title.text = 'Energy (kWh)';
-
-            // Update chart and table with aggregated data
-            dataBody.innerHTML = '';
-            realTimeChart.data.labels = [];
-            realTimeChart.data.datasets[0].data = [];
-
-            aggregatedData.forEach(entry => {
-                const row = document.createElement('tr');
-                row.innerHTML = `
-                    <td>${entry.label}</td>
-                    <td>${entry.p_grid.toFixed(2)}</td>
-                    <td>${entry.p_load !== null ? entry.p_load.toFixed(2) : 'N/A'}</td>
-                    <td>${entry.status}</td>
-                `;
-                dataBody.appendChild(row);
-
-                realTimeChart.data.labels.push(entry.label);
-                realTimeChart.data.datasets[0].data.push(entry.p_grid);
-            });
-
-            totalCostEl.textContent = `Total Cost: $${result.total_cost.toFixed(2)}`;
-            totalEnergyDrawnEl.textContent = `Total kWh Drawn: ${result.total_kWh_drawn.toFixed(2)} kWh`;
-            totalEnergyGeneratedEl.textContent = `Total kWh Generated: ${result.total_kWh_generated.toFixed(2)} kWh`;
-
-            realTimeChart.update();
-        }
-
-        function aggregateByHour(data) {
-            /**
-             * Aggregates power readings into hourly energy totals.
-             * Calculates kWh by integrating power readings over time.
-             * 
-             * @param {Array} data - Raw power readings
-             * @returns {Array} Hourly energy totals with labels
-             */
-            const hourlyData = {};
-
-            data.forEach(entry => {
-                const date = new Date(entry.timestamp);
-                const hourKey = `${date.getFullYear()}-${date.getMonth()+1}-${date.getDate()} ${date.getHours()}:00`;
-                if (!hourlyData[hourKey]) {
-                    hourlyData[hourKey] = [];
+                if (result.error) {
+                    dataBody.innerHTML = `<tr><td colspan="4">Error: ${result.error}</td></tr>`;
+                    totalCostEl.textContent = "$0.00";
+                    totalEnergyDrawnEl.textContent = "0.00 kWh";
+                    totalEnergyGeneratedEl.textContent = "0.00 kWh";
+                    return;
                 }
-                hourlyData[hourKey].push(entry);
-            });
 
-            const results = [];
-            for (const hourKey in hourlyData) {
-                const entries = hourlyData[hourKey];
-                entries.sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
+                // Update chart title based on aggregation interval
+                realTimeChart.options.scales.x.title.text = result.interval === 'hour' ? 'Hour' :
+                    result.interval === 'day' ? 'Day' : 'Week';
+                realTimeChart.options.scales.y.title.text = 'Energy (kWh)';
 
-                let total_grid_kWh = 0;
-                let total_load_kWh = 0;
+                // Update chart and table with aggregated data
+                dataBody.innerHTML = '';
+                realTimeChart.data.labels = [];
+                realTimeChart.data.datasets[0].data = [];
 
-                for (let i = 0; i < entries.length - 1; i++) {
-                    const current = entries[i];
-                    const next = entries[i+1];
-                    const p_grid = current.p_grid;
-                    const p_load = current.p_load;
-                    const t_current = new Date(current.timestamp);
-                    const t_next = new Date(next.timestamp);
-                    const delta_h = (t_next - t_current) / 3600000;
-
-                    if (delta_h > 0) {
-                        total_grid_kWh += (p_grid * delta_h) / 1000;
-                        if (p_load !== null && p_load !== undefined) {
-                            total_load_kWh += (p_load * delta_h) / 1000;
-                        }
+                result.data.forEach(entry => {
+                    const date = new Date(entry.timestamp);
+                    let label;
+                    
+                    if (result.interval === 'hour') {
+                        label = date.toLocaleString('en-US', { 
+                            hour: 'numeric', 
+                            hour12: true,
+                            month: 'short',
+                            day: 'numeric'
+                        });
+                    } else if (result.interval === 'day') {
+                        label = date.toLocaleDateString('en-US', { 
+                            month: 'short', 
+                            day: 'numeric' 
+                        });
+                    } else {
+                        // Week interval
+                        const weekEnd = new Date(date);
+                        weekEnd.setDate(weekEnd.getDate() + 6);
+                        label = `${date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
                     }
-                }
 
-                const status = total_grid_kWh > 0 ? 'pulling' : 'generating';
-                const dateObj = new Date(hourKey);
-                const label = dateObj.toLocaleString('en-US', { hour: 'numeric', hour12: true }) + ' ' + dateObj.toLocaleDateString('en-US');
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>${label}</td>
+                        <td>${entry.p_grid.toFixed(2)}</td>
+                        <td>${entry.p_load !== null ? entry.p_load.toFixed(2) : 'N/A'}</td>
+                        <td>${entry.status}</td>
+                    `;
+                    dataBody.appendChild(row);
 
-                results.push({
-                    label: label,
-                    p_grid: total_grid_kWh,
-                    p_load: total_load_kWh,
-                    status: status
+                    realTimeChart.data.labels.push(label);
+                    realTimeChart.data.datasets[0].data.push(entry.p_grid);
                 });
+
+                totalCostEl.textContent = `$${result.total_cost.toFixed(2)}`;
+                totalEnergyDrawnEl.textContent = `${result.total_kWh_drawn.toFixed(2)} kWh`;
+                totalEnergyGeneratedEl.textContent = `${result.total_kWh_generated.toFixed(2)} kWh`;
+
+                realTimeChart.update();
+            } catch (error) {
+                console.error('Error loading historical data:', error);
+                document.getElementById('data-body').innerHTML = `<tr><td colspan="4">Error loading data: ${error.message}</td></tr>`;
             }
-
-            // Sort by time
-            results.sort((a,b) => new Date(a.label) - new Date(b.label));
-            return results;
-        }
-
-        function aggregateByDay(data) {
-            /**
-             * Aggregates power readings into daily energy totals.
-             * Calculates kWh by integrating power readings over time.
-             * 
-             * @param {Array} data - Raw power readings
-             * @returns {Array} Daily energy totals with labels
-             */
-            const dailyData = {};
-
-            data.forEach(entry => {
-                const date = new Date(entry.timestamp);
-                const dayKey = `${date.getFullYear()}-${date.getMonth()+1}-${date.getDate()}`;
-                if (!dailyData[dayKey]) {
-                    dailyData[dayKey] = [];
-                }
-                dailyData[dayKey].push(entry);
-            });
-
-            const results = [];
-            for (const dayKey in dailyData) {
-                const entries = dailyData[dayKey];
-                entries.sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
-
-                let total_grid_kWh = 0;
-                let total_load_kWh = 0;
-
-                for (let i = 0; i < entries.length - 1; i++) {
-                    const current = entries[i];
-                    const next = entries[i+1];
-                    const p_grid = current.p_grid;
-                    const p_load = current.p_load;
-                    const t_current = new Date(current.timestamp);
-                    const t_next = new Date(next.timestamp);
-                    const delta_h = (t_next - t_current) / 3600000;
-
-                    if (delta_h > 0) {
-                        total_grid_kWh += (p_grid * delta_h) / 1000;
-                        if (p_load !== null && p_load !== undefined) {
-                            total_load_kWh += (p_load * delta_h) / 1000;
-                        }
-                    }
-                }
-
-                const status = total_grid_kWh > 0 ? 'pulling' : 'generating';
-                const dateObj = new Date(dayKey);
-                const label = dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-
-                results.push({
-                    label: label,
-                    p_grid: total_grid_kWh,
-                    p_load: total_load_kWh,
-                    status: status
-                });
-            }
-
-            // Sort by date
-            results.sort((a,b) => new Date(a.label) - new Date(b.label));
-            return results;
-        }
-
-        function aggregateByWeek(data) {
-            /**
-             * Aggregates power readings into weekly energy totals.
-             * Calculates kWh by integrating power readings over time.
-             * 
-             * @param {Array} data - Raw power readings
-             * @returns {Array} Weekly energy totals with labels
-             */
-            const weeklyData = {};
-
-            data.forEach(entry => {
-                const date = new Date(entry.timestamp);
-                const weekStart = new Date(date);
-                weekStart.setHours(0,0,0,0);
-                weekStart.setDate(weekStart.getDate() - weekStart.getDay());
-
-                const weekKey = weekStart.toISOString().split('T')[0];
-                if (!weeklyData[weekKey]) {
-                    weeklyData[weekKey] = [];
-                }
-                weeklyData[weekKey].push(entry);
-            });
-
-            const results = [];
-            for (const weekKey in weeklyData) {
-                const entries = weeklyData[weekKey];
-                entries.sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
-
-                let total_grid_kWh = 0;
-                let total_load_kWh = 0;
-
-                for (let i = 0; i < entries.length - 1; i++) {
-                    const current = entries[i];
-                    const next = entries[i+1];
-                    const p_grid = current.p_grid;
-                    const p_load = current.p_load;
-                    const t_current = new Date(current.timestamp);
-                    const t_next = new Date(next.timestamp);
-                    const delta_h = (t_next - t_current) / 3600000;
-
-                    if (delta_h > 0) {
-                        total_grid_kWh += (p_grid * delta_h) / 1000;
-                        if (p_load !== null && p_load !== undefined) {
-                            total_load_kWh += (p_load * delta_h) / 1000;
-                        }
-                    }
-                }
-
-                const status = total_grid_kWh > 0 ? 'pulling' : 'generating';
-
-                const weekStartDate = new Date(weekKey);
-                const weekEndDate = new Date(weekStartDate);
-                weekEndDate.setDate(weekEndDate.getDate() + 6);
-
-                const label = weekStartDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) 
-                    + ' - ' + weekEndDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-
-                results.push({
-                    label: label,
-                    p_grid: total_grid_kWh,
-                    p_load: total_load_kWh,
-                    status: status
-                });
-            }
-
-            results.sort((a,b) => {
-                const aDate = new Date(a.label.split(' - ')[0] + ' 00:00:00');
-                const bDate = new Date(b.label.split(' - ')[0] + ' 00:00:00');
-                return aDate - bDate;
-            });
-            return results;
         }
 
         document.getElementById('filter-button').addEventListener('click', () => {

@@ -9,7 +9,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 app = Flask(__name__)
 
 # Configuration constants - can be overridden by environment variables
-INVERTER_IP = os.getenv('FRONIUS_INVERTER_IP', '192.168.68.53')
+INVERTER_IP = os.getenv('FRONIUS_INVERTER_IP', '192.168.68.250')
 DATABASE = os.getenv('FRONIUS_DATABASE', 'power_data.db')
 TIMEZONE = os.getenv('FRONIUS_TIMEZONE', 'Australia/Sydney')
 POLL_INTERVAL = int(os.getenv('FRONIUS_POLL_INTERVAL', '10'))  # seconds
@@ -40,6 +40,11 @@ def init_db():
             p_load REAL,
             status TEXT NOT NULL
         )
+    ''')
+    # Add index on timestamp if it doesn't exist
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_timestamp 
+        ON power_data(timestamp)
     ''')
     conn.commit()
     conn.close()
@@ -144,57 +149,89 @@ def historical_data():
                 start_time = datetime(now.year, now.month, now.day, tzinfo=local_tz)
                 end_time = now
 
-            cursor.execute('''
-                SELECT timestamp, p_grid, p_load, status FROM power_data
-                WHERE timestamp BETWEEN ? AND ?
-                ORDER BY timestamp ASC
-            ''', (start_time.isoformat(), end_time.isoformat()))
+            # Calculate time difference in hours
+            hours_diff = (end_time - start_time).total_seconds() / 3600
+
+            # Choose aggregation interval based on time range
+            if hours_diff <= 24:
+                # Hourly aggregation for up to 24 hours
+                group_by = "strftime('%Y-%m-%d %H:00', timestamp)"
+                interval = "hour"
+            elif hours_diff <= 24 * 30:
+                # Daily aggregation for up to 30 days
+                group_by = "strftime('%Y-%m-%d', timestamp)"
+                interval = "day"
+            else:
+                # Weekly aggregation for longer periods
+                group_by = "strftime('%Y-%W', timestamp)"
+                interval = "week"
+
+            # Perform aggregation in SQL
+            query = f"""
+                WITH time_series AS (
+                    SELECT 
+                        {group_by} as period,
+                        AVG(p_grid) as avg_p_grid,
+                        AVG(p_load) as avg_p_load,
+                        MIN(timestamp) as period_start,
+                        MAX(timestamp) as period_end
+                    FROM power_data
+                    WHERE timestamp BETWEEN ? AND ?
+                    GROUP BY period
+                    ORDER BY period
+                )
+                SELECT 
+                    period_start as timestamp,
+                    avg_p_grid as p_grid,
+                    avg_p_load as p_load,
+                    CASE WHEN avg_p_grid > 0 THEN 'pulling' ELSE 'generating' END as status,
+                    (julianday(period_end) - julianday(period_start)) * 24 as duration_hours
+                FROM time_series
+            """
+            
+            cursor.execute(query, (start_time.isoformat(), end_time.isoformat()))
             rows = cursor.fetchall()
 
-        if not rows:
-            return jsonify({"error": "No data available for the selected time range."})
+            if not rows:
+                return jsonify({"error": "No data available for the selected time range."})
 
-        filtered_data = [
-            {"timestamp": timestamp, "p_grid": p_grid, "p_load": p_load, "status": status}
-            for timestamp, p_grid, p_load, status in rows
-        ]
+            filtered_data = []
+            total_cost = 0.0
+            total_kWh_drawn = 0.0
+            total_kWh_generated = 0.0
 
-        total_cost = 0.0
-        total_kWh_drawn = 0.0
-        total_kWh_generated = 0.0
+            for row in rows:
+                timestamp, p_grid, p_load, status, duration_hours = row
+                
+                # Calculate energy in kWh
+                energy_kWh = (p_grid / 1000) * duration_hours
 
-        filtered_data.sort(key=lambda x: x['timestamp'])
+                if p_grid > 0:
+                    total_kWh_drawn += energy_kWh
+                    total_cost += energy_kWh * IMPORT_RATE
+                elif p_grid < 0:
+                    total_kWh_generated += abs(energy_kWh)
+                    total_cost -= abs(energy_kWh) * EXPORT_RATE
 
-        for i in range(len(filtered_data) - 1):
-            current_entry = filtered_data[i]
-            next_entry = filtered_data[i + 1]
-            p_grid = float(current_entry['p_grid'])
-            timestamp_current = datetime.fromisoformat(current_entry['timestamp'])
-            timestamp_next = datetime.fromisoformat(next_entry['timestamp'])
-            duration_hours = (timestamp_next - timestamp_current).total_seconds() / 3600
+                filtered_data.append({
+                    "timestamp": timestamp,
+                    "p_grid": energy_kWh,  # Store as kWh instead of watts
+                    "p_load": p_load * duration_hours / 1000 if p_load is not None else None,
+                    "status": status
+                })
 
-            if duration_hours <= 0:
-                continue
+            return jsonify({
+                "data": filtered_data,
+                "total_cost": total_cost,
+                "total_kWh_drawn": total_kWh_drawn,
+                "total_kWh_generated": total_kWh_generated,
+                "start_time": start_time.isoformat(),
+                "end_time": end_time.isoformat(),
+                "interval": interval
+            })
 
-            energy_kWh = (p_grid / 1000) * duration_hours
-
-            if p_grid > 0:
-                total_kWh_drawn += energy_kWh
-                total_cost += energy_kWh * IMPORT_RATE
-            elif p_grid < 0:
-                total_kWh_generated += abs(energy_kWh)
-                total_cost -= abs(energy_kWh) * EXPORT_RATE
-
-        return jsonify({
-            "data": filtered_data,
-            "total_cost": total_cost,
-            "total_kWh_drawn": total_kWh_drawn,
-            "total_kWh_generated": total_kWh_generated,
-            "start_time": start_time.isoformat(),
-            "end_time": end_time.isoformat()
-        })
     except Exception as e:
-        app.logger.error(f"Error in historical_data: {e}")
+        app.logger.error(f"Error retrieving historical data: {e}")
         return jsonify({"error": str(e)})
 
 # Initialize database and set up data collection
