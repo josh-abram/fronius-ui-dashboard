@@ -166,26 +166,39 @@ def historical_data():
                 group_by = "strftime('%Y-%W', timestamp)"
                 interval = "week"
 
-            # Perform aggregation in SQL
+            # Perform aggregation in SQL with energy pre-calculation
             query = f"""
-                WITH time_series AS (
+                WITH raw_energy AS (
                     SELECT 
-                        {group_by} as period,
-                        AVG(p_grid) as avg_p_grid,
-                        AVG(p_load) as avg_p_load,
-                        MIN(timestamp) as period_start,
-                        MAX(timestamp) as period_end
+                        timestamp,
+                        p_grid,
+                        p_load,
+                        -- Calculate energy for each row using the sampling interval
+                        (p_grid * {POLL_INTERVAL / 3600.0} / 1000.0) as energy_kwh,
+                        (p_load * {POLL_INTERVAL / 3600.0} / 1000.0) as load_kwh
                     FROM power_data
                     WHERE timestamp BETWEEN ? AND ?
+                ),
+                time_series AS (
+                    SELECT 
+                        {group_by} as period,
+                        SUM(CASE WHEN energy_kwh > 0 THEN energy_kwh ELSE 0 END) as energy_drawn,
+                        SUM(CASE WHEN energy_kwh < 0 THEN ABS(energy_kwh) ELSE 0 END) as energy_generated,
+                        SUM(load_kwh) as load_energy,
+                        MIN(timestamp) as period_start,
+                        MAX(timestamp) as period_end
+                    FROM raw_energy
                     GROUP BY period
                     ORDER BY period
                 )
                 SELECT 
                     period_start as timestamp,
-                    avg_p_grid as p_grid,
-                    avg_p_load as p_load,
-                    CASE WHEN avg_p_grid > 0 THEN 'pulling' ELSE 'generating' END as status,
-                    (julianday(period_end) - julianday(period_start)) * 24 as duration_hours
+                    energy_drawn - energy_generated as p_grid,
+                    load_energy as p_load,
+                    CASE WHEN (energy_drawn - energy_generated) > 0 THEN 'pulling' ELSE 'generating' END as status,
+                    (julianday(period_end) - julianday(period_start)) * 24 as duration_hours,
+                    energy_drawn,
+                    energy_generated
                 FROM time_series
             """
             
@@ -201,22 +214,16 @@ def historical_data():
             total_kWh_generated = 0.0
 
             for row in rows:
-                timestamp, p_grid, p_load, status, duration_hours = row
+                timestamp, p_grid, p_load, status, duration_hours, energy_drawn, energy_generated = row
                 
-                # Calculate energy in kWh
-                energy_kWh = (p_grid / 1000) * duration_hours
-
-                if p_grid > 0:
-                    total_kWh_drawn += energy_kWh
-                    total_cost += energy_kWh * IMPORT_RATE
-                elif p_grid < 0:
-                    total_kWh_generated += abs(energy_kWh)
-                    total_cost -= abs(energy_kWh) * EXPORT_RATE
+                total_kWh_drawn += energy_drawn
+                total_kWh_generated += energy_generated
+                total_cost += (energy_drawn * IMPORT_RATE) - (energy_generated * EXPORT_RATE)
 
                 filtered_data.append({
                     "timestamp": timestamp,
-                    "p_grid": energy_kWh,  # Store as kWh instead of watts
-                    "p_load": p_load * duration_hours / 1000 if p_load is not None else None,
+                    "p_grid": p_grid,  # Already in kWh
+                    "p_load": p_load,  # Already in kWh
                     "status": status
                 })
 
