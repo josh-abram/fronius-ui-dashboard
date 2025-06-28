@@ -5,16 +5,20 @@ from datetime import datetime
 import pytz
 import sqlite3
 from apscheduler.schedulers.background import BackgroundScheduler
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 app = Flask(__name__)
 
-# Configuration constants - can be overridden by environment variables
-INVERTER_IP = os.getenv('FRONIUS_INVERTER_IP', '192.168.68.250')
+# Configuration constants - loaded from .env file or environment variables
+INVERTER_IP = os.getenv('FRONIUS_INVERTER_IP', '192.168.1.2')
 DATABASE = os.getenv('FRONIUS_DATABASE', 'power_data.db')
 TIMEZONE = os.getenv('FRONIUS_TIMEZONE', 'Australia/Sydney')
 POLL_INTERVAL = int(os.getenv('FRONIUS_POLL_INTERVAL', '10'))  # seconds
-PORT = int(os.getenv('FRONIUS_PORT', '8080'))
-HOST = os.getenv('FRONIUS_HOST', '0.0.0.0')
+PORT = int(os.getenv('SERVER_PORT', '8080'))
+HOST = os.getenv('SERVER_HOST', '0.0.0.0')
 IMPORT_RATE = float(os.getenv('FRONIUS_IMPORT_RATE', '0.297'))  # $ per kWh
 EXPORT_RATE = float(os.getenv('FRONIUS_EXPORT_RATE', '0.035'))  # $ per kWh
 

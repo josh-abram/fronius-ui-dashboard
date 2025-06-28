@@ -32,9 +32,9 @@ cd fronius-monitor
 pip install -r requirements.txt
 ```
 
-3. Configure your inverter's IP address:
-   - Open `fronius.py`
-   - Update the `INVERTER_IP` constant with your Fronius inverter's local IP address
+3. Configure the application:
+   - Copy `.env.example` to `.env`
+   - Edit `.env` and update the configuration values as needed (see Configuration section below)
 
 ## Usage
 
@@ -44,22 +44,33 @@ python fronius.py
 ```
 
 2. Access the web interface:
-   - Open your browser and navigate to `http://localhost:80`
+   - Open your browser and navigate to `http://localhost:8080`
    - For remote access within your network, use your machine's IP address
 
 ## Configuration
 
-### Power Rates
-Current power rates are set to:
-- Import from grid: $0.297 per kWh
-- Export to grid: $0.035 per kWh credit
+All configuration is managed through the `.env` file. Copy `.env.example` to `.env` and modify the following settings:
 
-To modify these rates, update the values in the `historical_data` function in `fronius.py`.
+### Inverter Settings
+- `FRONIUS_INVERTER_IP`: IP address of your Fronius inverter (default: 192.168.68.250)
+
+### Database Settings  
+- `FRONIUS_DATABASE`: SQLite database filename (default: power_data.db)
+
+### Server Settings
+- `SERVER_HOST`: Server host address (default: 0.0.0.0)
+- `SERVER_PORT`: Server port (default: 8080)
+
+### Data Collection
+- `FRONIUS_POLL_INTERVAL`: Data collection interval in seconds (default: 10)
 
 ### Timezone
-The application is currently set to 'Australia/Sydney' timezone. To change this:
-1. Locate the timezone setting in `fronius.py`
-2. Replace 'Australia/Sydney' with your desired timezone
+- `FRONIUS_TIMEZONE`: Timezone for data timestamps (default: Australia/Sydney)
+  - Use IANA timezone names (e.g., 'America/New_York', 'Europe/London')
+
+### Power Rates
+- `FRONIUS_IMPORT_RATE`: Cost per kWh when importing from grid (default: 0.297)
+- `FRONIUS_EXPORT_RATE`: Credit per kWh when exporting to grid (default: 0.035)
 
 ## Data Storage
 
